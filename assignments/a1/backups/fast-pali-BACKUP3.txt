@@ -1,0 +1,232 @@
+
+/*
+CPSC457 Winter 2025 | Assignment 1 | Benny Liang | 30192142
+*/
+
+#include <ctype.h>
+#include <stdio.h>
+#include <string>
+#include <unistd.h>
+#include <vector>
+
+#include <tuple>
+
+#include <iostream> // TEMP FOR DEBUG
+
+using namespace std;
+
+// split string p_line into a vector of strings (words)
+// the delimiters are 1 or more whitespaces, or whatever isspace() says it is
+//    i.e. ' ', '\n', '\r', '\t', '\n', '\f'
+// vector<std::string> split(const unsigned char* p_line)
+// {
+//     cout << "---split---" << endl; // debug
+//     vector<string> words;
+//     string tmpWord = "";
+//     for (size_t i = 0; p_line[i] != '\0'; i++)  // loop through `p_line` until we reach last element inside it ('\0`) 
+//     {
+//         if (!isspace(p_line[i]))    // as long as the char is not a `space`/word separator, add it to tmp word
+//             tmpWord += p_line[i];
+//         else if (!tmpWord.empty())  // if the current character being checked is a `space`/word separator, and tmp word is not empty, add the word
+//         {
+//             cout << "word added: " << tmpWord << endl; // debug
+//             words.push_back(tmpWord);   // add the word
+//             tmpWord = "";   // reset tmp word
+//         }
+
+//         if (p_line[i+1] == '\0')
+//             cout << "found end of buffer, last char is: " << p_line[i] << endl;
+//     }
+
+//     if (!tmpWord.empty())   // if the file doesn't end in a space or new line character, add the tmp word as long as it's not empty 
+//     {
+//         cout << "[end sentence does not contain newline or space] word added: " << tmpWord << endl; // debug
+//         words.push_back(tmpWord);
+//     }
+//     return words;
+// }
+
+vector<std::string> split(const unsigned char* p_line, int buff_size)
+{
+    cout << "---split---" << endl; // debug
+    vector<string> words;
+    string tmpWord = "";
+    for (size_t i = 0; i < buff_size; i++)  // loop through `p_line` until we reach last element inside it ('\0`) 
+    {
+        if (!isspace(p_line[i]))    // as long as the char is not a `space`/word separator, add it to tmp word
+            tmpWord += p_line[i];
+        else if (!tmpWord.empty())  // if the current character being checked is a `space`/word separator, and tmp word is not empty, add the word
+        {
+            // cout << "word added: " << tmpWord << endl; // debug
+            words.push_back(tmpWord);   // add the word
+            tmpWord = "";   // reset tmp word
+        }
+
+        if (p_line[i+1] == '\0')
+            cout << "found end of buffer, last char is: " << p_line[i] << endl;
+    }
+
+    if (!tmpWord.empty())   // if the file doesn't end in a space or new line character, add the tmp word as long as it's not empty 
+    {
+        cout << "[end sentence does not contain newline or space] word added: " << tmpWord << endl; // debug
+        words.push_back(tmpWord);
+    }
+    return words;
+}
+
+int readCounter = 0;    // debug
+
+// global variable used in stdin_readline()
+unsigned char buffer[1024*1024];    // 1MB of storage to hold result of `read()`
+// unsigned char buffer[1];    // 1MB of storage to hold result of `read()` // DEBUG
+int buff_size = 0;  // stores number of characters are in `buffer` 
+int buff_pos = 0;   // position in `buffer` to extract next char
+
+// reads in a line from STDIN
+// reads until \n or EOF and result includes \n if present
+// returns empty vector<string> on EOF
+// vector<string> stdin_readline()
+// {
+//     vector<string> words;
+//     readCounter++;
+//     // if (buff_pos >= buff_size)  // checks if the `buffer[]` is empty
+//     // {
+//     //     // `buffer[]` is empty, fill it
+//     //     buff_size = read(STDIN_FILENO, buffer, sizeof(buffer));
+
+//     //     // check end of file (EOF)
+//     //     if (buff_size <= 0)
+//     //         return words; // return an empty vector if we've reached EOF
+
+//     //     buff_pos = buff_size+1; // set buff_pos = buff_size + 1, so we read new line (fill `buffer` with new info with every call)
+
+//     //     words = split(buffer);  // split the `buffer[]` (sentence of 1MB) into words
+//     //     return words;
+//     // }
+    
+//     // printf("THIS SHOULD NEVER EXECUTE! :)\n"); // this should never execute // DEBUG
+//     // return words;   // otherwise return an empty vector if we've reached EOF
+
+//     // 2nd attempt
+//     // // `buffer[]` is empty, fill it
+//     // buff_size = read(STDIN_FILENO, buffer, sizeof(buffer));
+//     // readCounter++;
+//     // // check end of file (EOF)
+//     // if (buff_size <= 0)
+//     //     return words; // return an empty vector if we've reached EOF
+
+//     // // buff_pos = buff_size+1; // set buff_pos = buff_size + 1, so we read new line (fill `buffer` with new info with every call)
+
+//     // words = split(buffer);  // split the `buffer[]` (sentence of 1MB) into words
+//     // cout << "Returning words vector of size: " << words.size() << endl;
+//     // return words;
+
+//     int buff_size = read(STDIN_FILENO, buffer, sizeof(buffer));
+
+//     if (buff_size <= 0)
+//         return {};
+//         // return words;
+
+//     return split(buffer);
+// }
+
+tuple<vector<string>, int> stdin_readline()
+{
+    vector<string> words;
+    readCounter++;
+
+    buff_size = read(STDIN_FILENO, buffer, sizeof(buffer));
+
+    if (buff_size <= 0)
+        return tuple(words, buff_size);
+        // return words;
+
+    return tuple(split(buffer, buff_size), buff_size);
+}
+
+// returns true if a word is palindrome
+// palindrome is a string that reads the same forward and backward
+//    after converting all characters to lower case
+bool is_palindrome(const std::string & s)
+{
+    for (size_t i = 0; i < s.size() / 2; i++) {
+        if (tolower(s[i]) != tolower(s[s.size() - i - 1])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// get_longest_palindrome() returns the longest palindrome on standard input.
+// In case of ties for length, returns the first palindrome found.
+//
+// Algorithm:
+// Input is broken into lines, each line into words, and each word
+// is checked to see if it is palindrome, and if it is, whether it
+// is longer than the largest palindrome encountered so far.
+//
+// A word is a sequence of characters separated by white space
+// white space is whatever isspace() says it is
+//    i.e. ' ', '\n', '\r', '\t', '\n', '\f'
+// std::string get_longest_palindrome()
+// {
+//     string max_pali = "";
+//     vector<string> wordsVector = stdin_readline();
+//     while (wordsVector.size() > 0)
+//     {        
+//         // Find the longest palindrome from what was read.
+//         for (string word : wordsVector)
+//         {
+//             if (word.length() <= max_pali.length())
+//                 continue;
+//             else if (is_palindrome(word))
+//                 max_pali = word;
+//         }
+
+//         wordsVector = stdin_readline(); // get new words
+
+//         // if (wordsVector.size() == 0)
+//         // {
+//         //     cout << "words vector is empty" << endl;
+//         //     wordsVector = stdin_readline(); // get new words
+//         //     cout << "getting new words... size is now: " << wordsVector.size() << endl;
+//         // }
+//     }
+
+//     return max_pali;
+// }
+
+std::string get_longest_palindrome()
+{
+    string max_pali = "";
+    vector<string> wordsVector;
+    while (true)
+    {        
+        auto [wordsVector, buff_size] = stdin_readline(); // get new words
+
+        if (buff_size <= 0)
+        {
+            cout << "found EOF exiting get_longest_palindrome" << endl;
+            break;
+        }
+
+        // Find the longest palindrome from what was read.
+        for (string word : wordsVector)
+        {
+            if (word.length() <= max_pali.length())
+                continue;
+            else if (is_palindrome(word))
+                max_pali = word;
+        }
+    }
+
+    return max_pali;
+}
+
+int main()
+{
+    std::string max_pali = get_longest_palindrome();
+    printf("Longest palindrome: %s\n", max_pali.c_str());
+    printf("number of reads: %d\n", readCounter);
+    return 0;
+}
