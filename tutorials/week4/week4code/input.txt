@@ -1,0 +1,2 @@
+Hi, this is to use C functions which are wrappers of system calls.
+Lets see if they work well.
