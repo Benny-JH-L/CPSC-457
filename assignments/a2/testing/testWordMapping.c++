@@ -28,6 +28,7 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
         return fd;
     
     unsigned char buffer[1024*1024]; // 1MB buffer
+    // unsigned char buffer[10]; // TEST ONLY
     
     // Read a line in the file and store it in `buffer`
     string tmpWord = "";
@@ -37,7 +38,7 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
         if (bytesRead <= 0)
             break;
         
-        printf("`Line read: %s`\n", buffer);
+        printf("Line read: `%s`\n", buffer);
         // splitAndCheck(buffer, bytesRead, mapOccurances);
         
         // Parse what was read into words
@@ -58,6 +59,9 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
             }
         }
     }
+    // Last check for `tmpWord`: if the file doesn't end with a space or new line.
+    if (!tmpWord.empty() && tmpWord.length() >= 5)
+        mapOccurances[tmpWord]++;   // increment the number of occurances for this word.
 
     close(fd);   // close the file
     return 1;
