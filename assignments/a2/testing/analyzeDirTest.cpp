@@ -7,7 +7,8 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <fcntl.h>
-
+#include <algorithm>
+#include <cctype>   // for tolower()
 #include <iostream> // ONLY USED FOR DEBUGGING STATEMENTS (std::cout)
 
 using namespace std;
@@ -18,12 +19,14 @@ using namespace std;
 #include <utility>
 #include <vector>
 
-struct ImageInfo {
+struct ImageInfo 
+{
     std::string path;
     long width, height;
 };
 
-struct Results {
+struct Results 
+{
     // path of the largest file in the directory
     std::string largest_file_path;
     // size (in bytes) of the largest file
@@ -75,7 +78,7 @@ static bool ends_with(const std::string & str, const std::string & suffix)
     }
 }
 
-/// @brief maps the words occuring in a ".txt" File of `filePath` to `mapOccurances`.
+/// @brief maps the words occuring in a ".txt" File of `filePath` to `mapOccurances`. (Ignores digits)
 /// @param mapOccurances a unordered_map<string, size_t>&, containing words and their number of occurances.
 /// @param filePath a valid file path, a `std::string`.
 /// @return an int. Return,
@@ -105,8 +108,8 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
         // Parse what was read into words
         for (size_t i = 0; i < bytesRead; i++)  // loop through `buffer` until we reach last element inside it (will reach '\0`) 
         {
-            if (!isspace(buffer[i]))    // as long as the char is not a `space`/word separator, add it to tmp word
-                tmpWord += buffer[i];
+            if (!isspace(buffer[i]) && !isdigit(buffer[i]))    // as long as the char is not a `space`/word separator, or a digit, add it to tmp word
+                tmpWord += tolower(buffer[i]);                 // set the char at `buffer[i]` to lowercase before adding it to tmp word.
             else if (!tmpWord.empty())  // if the current character being checked is a `space`/word separator, and tmp word is not empty, add the word
             {
                 if (tmpWord.length() < 5)   // check if the word is at least 5 characters long
@@ -128,7 +131,7 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
     return 1;
 }
 
-void analyzeRecur(Results& result, string dir_name)
+void analyzeRecur(Results& result, unordered_map<string, size_t>& mapOccurances, string dir_name)
 {
     // string dir_name = "."; // using chdir("..") will move up a directory
     DIR* dir = opendir(dir_name.c_str());
@@ -166,7 +169,7 @@ void analyzeRecur(Results& result, string dir_name)
         if (is_dir(pathOfEntity))       // check if the `pathOfEntity` is a directory
         {
             cout<<"Name of the dir: "<< nameOfEntity <<endl;    // debug
-            analyzeRecur(result, pathOfEntity);  // Recursively call `analyzeRecur(...)` on a sub-directory 
+            analyzeRecur(result, mapOccurances, pathOfEntity);  // Recursively call `analyzeRecur(...)` on a sub-directory 
         }
         else if (is_file(pathOfEntity)) // check if the `pathOfEntity` is a file
         {
@@ -193,8 +196,52 @@ void analyzeRecur(Results& result, string dir_name)
                 result.largest_file_size = fileSize;
             }
 
-            if (ends_with(nameOfEntity, ".txt"))    // check if the file is a ".txt" file
+            // check if the file is a ".txt" file
+            if (ends_with(nameOfEntity, ".txt"))    
             {
+                mapWordsFromFile(mapOccurances, pathOfEntity);  // count the words in the file. 
+            }
+            // Check if the file is an image (NOTE TO SELF, NEED TO TEST USING LAB COMPUTERS FOR THIS PART)
+            else
+            {
+                cout << "Checking potential picture path: " << pathOfEntity << endl; // debug
+                string cmd = "identify -format '%wx%h' " + pathOfEntity;    // command for `popen()` (NOTE TO SELF, NEED TO TEST USING LAB COMPUTERS, bc `identify` is not a command on Windows)
+                // NOTE TO SELF: there's probably a Windows equivalent for ^
+                FILE* fp = popen(cmd.c_str(), "r");
+                
+                if (fp)
+                {
+                    cout << "Entered valid image checker" << endl; // debug
+                    string imgSizeStr;
+                    char buff[PATH_MAX];
+
+                    if (fgets(buff, PATH_MAX, fp) != NULL)  // read line generated from the command using `cmd` in `popen(..)`
+                        imgSizeStr = buff;                // store the dimensions of the image (width x height)
+                    
+                    cout << "imgSizeStr = " << imgSizeStr << endl; // debug
+
+                    int status = pclose(fp);
+                    if (status != 0 || imgSizeStr[0] == '0')  // check if the exit status is 0, or if the image has no size.
+                        imgSizeStr = "";                      // set the string empty
+                    
+                    // if the `image_size_str` is not empty, then parse the string into the width and length
+                    if (!imgSizeStr.empty())
+                    {
+                        cout << "     Valid image found" << endl; // debug
+
+                        size_t posOfX = imgSizeStr.find('x');   // finds the position of `x` (will be between width and height)
+                        cout << "     pos of \'x\': " << posOfX << endl; // debug
+                        long width = stoi(imgSizeStr.substr(0, posOfX));  // get the width (get the substring from index 0 to before `x`s position)
+                        long height = stoi(imgSizeStr.substr(posOfX + 1, imgSizeStr.length() - posOfX - 1));   // get the height (get the substring from index [`x`+ 1] to the remaining characters in the string)
+                        // Ex. 15x15: index `x` is 2, string len: 5, number of characters after `x` is 5 - 2 - 1 = 2
+                        cout << "     img width: " << width << endl; // debug
+                        cout << "     img height: " << height << endl; // debug
+                        result.largest_images.emplace_back(ImageInfo{pathOfEntity, width, height});    // add this image's info to the std::vector
+
+                        // ImageInfo imgInfo = {pathOfEntity, width, height};
+                        // result.largest_images.emplace_back(imgInfo);    // add this image's info to the std::vector
+                    }
+                }
             }
 
         }
@@ -205,13 +252,65 @@ void analyzeRecur(Results& result, string dir_name)
     closedir(dir);
 }
 
-void analyze(Results& result)
+void analyze(Results& result, int n)
 {
     string dir_name = "."; // Note to self; using chdir("..") will move up a directory
-    analyzeRecur(result, dir_name);
+    unordered_map<string, size_t> mapOccurances;
+    analyzeRecur(result, mapOccurances, dir_name);
 
     // remove the "./" in the path to the largest file to get the relative path to it.
     result.largest_file_path.erase(0, 2);   // remove 2 characters staring from index 0 (1st character) of the string.
+
+    // debug
+    cout << "\nWords occurances mapped form .txt files" << endl;
+    for (auto& pair : mapOccurances)
+    {
+        auto& [str, occurances] = pair;
+        cout << "\"" << str << "\" x " << occurances << endl; 
+    }
+    // end debug
+
+    // Get the `n` most common words in `mapOccurances`
+    vector<pair<string, int>> arr;
+    for(auto& pair : mapOccurances)
+        arr.push_back(pair);
+    // if we have more than N entries, we'll sort partially, since
+    // we only need the first N to be sorted
+    if(arr.size() > size_t(n)) 
+    {
+        std::partial_sort(arr.begin(), arr.begin() + n, arr.end());
+        // drop all entries after the first n
+        arr.resize(n);
+    } 
+    else 
+    {
+        std::sort(arr.begin(), arr.end());
+    }
+    result.most_common_words = arr;     // Set the most common words
+
+    // Get the `n` largest images
+    // if we have more than N entries, we'll sort partially, since
+    // we only need the first N to be sorted
+    
+    // Used for `partial_sort(...)` as 4th arg. Tells it to sort `ImageInfo` by the number of pixels an image has. 
+    auto compareByPixels = [](const ImageInfo& a, const ImageInfo& b){
+        return a.width * a.height > b.width * b.height;         // Sort by greatest to smallest (Descending order).
+    };
+
+    vector<ImageInfo>& arrImg = result.largest_images;
+    if (arrImg.size() > size_t(n))
+    {
+        partial_sort(arrImg.begin(), arrImg.begin() + n, arrImg.end(), compareByPixels);
+        arrImg.resize(n);  // drop all entries after the first n
+    }
+    else
+    {
+        sort(arrImg.begin(), arrImg.end(), compareByPixels);
+    }
+
+    // remove the "./" in the path to the largest images to get the relative path to it.
+    for (ImageInfo& info : arrImg)
+        info.path.erase(0, 2);   // remove 2 characters staring from index 0 (1st character) of the string.
 }
 
 int main()
@@ -253,7 +352,7 @@ int main()
     vector<ImageInfo> largest_images;
     vector<string> vacent_dirs;
     Results result = {"", -1, 0, 0, 0, most_common_pairs, largest_images, vacent_dirs};
-    analyze(result);
+    analyze(result, 5);
 
     cout << "\n\n" << changeDirTo << " as `root` directory: " << endl;
     cout << "The largest file has the path: " << result.largest_file_path << endl; 
