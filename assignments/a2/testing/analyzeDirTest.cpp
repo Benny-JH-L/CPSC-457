@@ -273,22 +273,42 @@ void analyze(Results& result, int n)
     // end debug
 
     // Get the `n` most common words in `mapOccurances`
-    vector<pair<string, int>> arr;
+    // vector<pair<string, int>> arr;  // Pair: 1st elem, word. 2nd elem, number of occurances for that word.
+    // first we place the words and counts into a vector (with count negative to reverse the sort)
+    vector<pair<int, string>> arrOccWords; // Pair: 1st number of occurances for that word., word. 2nd elem, word. 
     for(auto& pair : mapOccurances)
-        arr.push_back(pair);
+    {
+        auto [word, occ] = pair;
+        arrOccWords.emplace_back(-occ, word);
+    }
+
     // if we have more than N entries, we'll sort partially, since
     // we only need the first N to be sorted
-    if(arr.size() > size_t(n)) 
+    if(arrOccWords.size() > size_t(n)) 
     {
-        std::partial_sort(arr.begin(), arr.begin() + n, arr.end());
-        // drop all entries after the first n
-        arr.resize(n);
+        partial_sort(arrOccWords.begin(), arrOccWords.begin() + n, arrOccWords.end());
+        arrOccWords.resize(n); // drop all entries after the first `n`
     } 
     else 
     {
-        std::sort(arr.begin(), arr.end());
+        sort(arrOccWords.begin(), arrOccWords.end());
     }
-    result.most_common_words = arr;     // Set the most common words
+    
+    // Set the most common words into `result`
+    for (auto& pair : arrOccWords)
+    {
+        auto [occ, word] = pair;
+        result.most_common_words.emplace_back(word, -occ);
+    }
+
+    // debug
+    cout << "\nSorted `n` common words: " << endl;
+    for (auto pair : result.most_common_words)
+    {
+        auto& [str, occurances] = pair;
+        cout << "\"" << str << "\" x " << occurances << endl; 
+    }
+    // end debug
 
     // Get the `n` largest images
     // if we have more than N entries, we'll sort partially, since
