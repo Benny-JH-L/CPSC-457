@@ -20,7 +20,7 @@ using namespace std;
 /// -1: error opening a file.
 /// 0: something :).
 /// 1: successfully opened and read file.
-static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string filePath)
+static int mapWordsFromFileINCLUDING_DIGITS(unordered_map<string, size_t>& mapOccurances, string filePath)
 {
     int fd = open(filePath.c_str(), O_RDONLY);  // open the file
 
@@ -67,11 +67,64 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
     return 1;
 }
 
+/// @brief maps the words occuring in a ".txt" File of `filePath` to `mapOccurances`. (Ignores digits)
+/// @param mapOccurances a unordered_map<string, size_t>&, containing words and their number of occurances.
+/// @param filePath a valid file path, a `std::string`.
+/// @return an int. Return,
+/// -1: error opening a file.
+/// 0: something :).
+/// 1: successfully opened and read file.
+static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string filePath)
+{
+    int fd = open(filePath.c_str(), O_RDONLY);  // open the file
+
+    if (fd <= 0)  // Error opening 
+        return fd;
+    
+    unsigned char buffer[1024*1024]; // 1MB buffer
+    
+    // Read a line in the file and store it in `buffer`
+    string tmpWord = "";
+    while(true)
+    {
+        int bytesRead = read(fd, buffer, sizeof(buffer));
+        if (bytesRead <= 0)
+            break;
+        
+        printf("`Line read: %s`\n", buffer);
+        // splitAndCheck(buffer, bytesRead, mapOccurances);
+        
+        // Parse what was read into words
+        for (size_t i = 0; i < bytesRead; i++)  // loop through `buffer` until we reach last element inside it (will reach '\0`) 
+        {
+            if (!isspace(buffer[i]) && !isdigit(buffer[i]))    // as long as the char is not a `space`/word separator, or a digit, add it to tmp word
+                tmpWord += tolower(buffer[i]);                 // set the char at `buffer[i]` to lowercase before adding it to tmp word.
+            else if (!tmpWord.empty())  // if the current character being checked is a `space`/word separator, and tmp word is not empty, add the word
+            {
+                if (tmpWord.length() < 5)   // check if the word is at least 5 characters long
+                {
+                    tmpWord = "";
+                    continue;
+                }
+                printf("Word created: %s\n", tmpWord.c_str());
+                mapOccurances[tmpWord]++;   // increment the number of occurances for this word.
+                tmpWord = "";   // reset tmp word
+            }
+        }
+    }
+    // Last check for `tmpWord`: if the file doesn't end with a space or new line.
+    if (!tmpWord.empty() && tmpWord.length() >= 5)
+        mapOccurances[tmpWord]++;   // increment the number of occurances for this word.
+    
+    close(fd);   // close the file
+    return 1;
+}
+
 int main()
 {
     string path = "t1.txt";
     unordered_map<string, size_t> mapOccurances;
-    mapWordsFromFile(mapOccurances, path);
+    mapWordsFromFileINCLUDING_DIGITS(mapOccurances, path);
 
     // debug
     cout << "\nPrinting occrances in map: " << endl;
