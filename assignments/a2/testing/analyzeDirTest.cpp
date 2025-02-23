@@ -343,6 +343,9 @@ int main()
         Largest images:
     */
 
+    // NOTE: NEED TO COMMENT OUT IMAGE CHECKING IF I'M RUNNING IT ON WINDOWS, SINCE 
+    // `identify` is not a cmd for Windows!
+
     // Simulate `main` changing directory
     chdir(changeDirTo.c_str());
     cout << "Changed directory to: " << changeDirTo << endl;
