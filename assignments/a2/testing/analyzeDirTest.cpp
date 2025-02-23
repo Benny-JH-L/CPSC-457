@@ -78,7 +78,7 @@ static bool ends_with(const std::string & str, const std::string & suffix)
     }
 }
 
-/// @brief maps the words occuring in a ".txt" File of `filePath` to `mapOccurances`. (Ignores digits)
+/// @brief maps the words occuring in a ".txt" File of `filePath` to `mapOccurances`. (Only includes letters for words)
 /// @param mapOccurances a unordered_map<string, size_t>&, containing words and their number of occurances.
 /// @param filePath a valid file path, a `std::string`.
 /// @return an int. Return,
@@ -98,7 +98,8 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
     string tmpWord = "";
     while(true)
     {
-        int bytesRead = read(fd, buffer, sizeof(buffer));
+        // int bytesRead = read(fd, buffer, sizeof(buffer));
+        ssize_t bytesRead = read(fd, buffer, sizeof(buffer));
         if (bytesRead <= 0)
             break;
         
@@ -106,10 +107,11 @@ static int mapWordsFromFile(unordered_map<string, size_t>& mapOccurances, string
         // splitAndCheck(buffer, bytesRead, mapOccurances);
         
         // Parse what was read into words
-        for (size_t i = 0; i < bytesRead; i++)  // loop through `buffer` until we reach last element inside it (will reach '\0`) 
+        // for (size_t i = 0; i < bytesRead; i++)  // loop through `buffer` until we reach last element inside it (will reach '\0`) 
+        for (ssize_t i = 0; i < bytesRead; i++)  // loop through `buffer` until we reach last element inside it (will reach '\0`) 
         {
-            if (!isspace(buffer[i]) && !isdigit(buffer[i]))    // as long as the char is not a `space`/word separator, or a digit, add it to tmp word
-                tmpWord += tolower(buffer[i]);                 // set the char at `buffer[i]` to lowercase before adding it to tmp word.
+            if (isalpha(buffer[i]))    // if the char is a letter, add it to tmp word
+                tmpWord += tolower(buffer[i]);  // set the char at `buffer[i]` to lowercase before adding it to tmp word.
             else if (!tmpWord.empty())  // if the current character being checked is a `space`/word separator, and tmp word is not empty, add the word
             {
                 if (tmpWord.length() < 5)   // check if the word is at least 5 characters long
