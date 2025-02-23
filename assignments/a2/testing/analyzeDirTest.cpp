@@ -215,7 +215,7 @@ bool analyzeRecur(Results& result, AnalyzeStruct& analyzeStruct, string dir_name
             else
             {
                 cout << "Checking potential picture path: " << pathOfEntity << endl; // debug
-                string cmd = "identify -format '%wx%h' " + pathOfEntity;    // command for `popen()` (NOTE TO SELF, NEED TO TEST USING LAB COMPUTERS)
+                string cmd = "identify -format '%wx%h' " + pathOfEntity + " 2> /dev/null";    // command for `popen()` (NOTE TO SELF, NEED TO TEST USING LAB COMPUTERS)
                 // NOTE TO SELF: there's probably a Windows equivalent for ^
                 FILE* fp = popen(cmd.c_str(), "r");
                 
