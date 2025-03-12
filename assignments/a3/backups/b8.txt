@@ -9,11 +9,6 @@
 /// you wish, as long as you implement the detect_primes() function as
 /// defined in "detectPrimes.h".
 
-
-/*
-CPSC457 Winter 2025 | Assignment 3 | Benny Liang | 30192142
-*/
-
 #include "detectPrimes.h"
 #include <cmath>
 #include <condition_variable>
@@ -70,21 +65,28 @@ class simple_barrier {
     }
   };
 
-unordered_map<int64_t, bool> cached_results; // a cache, remembers previously computed numbers if they were prime.
+unordered_map<int64_t, bool> resultMap; // a cache, remembers previously computed numbers if they were prime.
 
-mutex myMutex;  // used for debug statments
+// simple_barrier barrier = simple_barrier();
 
-atomic<bool> global_is_number_selected = false;
-atomic<bool> global_finished = false;               // flag for all threads, if we've gone through all numbers in the `nums` vector
+mutex myMutex;
 
-int global_n_threads;                               // number of threads
+vector<Task> global_task_pool;
+vector<bool> global_is_prime_vec;
+atomic<bool> global_number_selected = false;
+atomic<bool> global_finished = false;
+// atomic<bool> global_is_prime = true;                    // set initially as true
+atomic<bool> global_determined_primality = false;       // flag for all threads (early cancelation)
 
-vector<int64_t> global_result;                      // stores numbers that are prime
-vector<Task> global_tasks;                          // values for each thread (thread_id -> associated task)
+// unsigned long global_curr_index = 0;
+int global_n_threads;
 
-/// Task -> The thread's associated task information
-/// is_prime -> flag to tell this thread and other threads if the current number is a prime.
-/// is another thread determines that this number is prime, all other threads will exit early.
+vector<int64_t> global_result;
+vector<Task> tasks;
+
+
+// this version contains an early stop (takes a little longer ~0.78 for hard.txt and hard2.txt)
+// void check_prime_task(int64_t number, int64_t start, int64_t end, atomic<bool>& is_prime)
 void check_prime_task(Task& task, atomic<bool>& is_prime) 
 {
     int64_t number = task.curr_num;
@@ -96,22 +98,22 @@ void check_prime_task(Task& task, atomic<bool>& is_prime)
     // cout << "start: " << start << endl;
     // cout << "end: " << end << endl;
 
-    for (int64_t i = start; i <= end && is_prime.load(); i += 6)
-    {
-        if (number % i == 0 || number % (i + 2) == 0) 
-        {
+    for (int64_t i = start; i <= end && is_prime.load(); i += 6) {
+        if (number % i == 0 || number % (i + 2) == 0) {
             is_prime.store(false);
             return;
         }
     }
 }
 
+
+// static void thread_function(int thread_id, const vector<int64_t>& nums)
 void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_t>& nums, unsigned long& curr_index, atomic<bool>& is_prime)
 {
     while(true)
     {
-
-        if (barrier.wait())     // get the `last` thread to reach the barrier
+        // pick one thread with the barrier
+        if (barrier.wait())
         {
             // debug
             // myMutex.lock();
@@ -119,7 +121,7 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
             // cout << "\tCurr index = " << curr_index;
             // myMutex.unlock();
 
-            if (curr_index >= nums.size())  // check if we've gone through all numbers in the vector
+            if (curr_index >= nums.size())
             {
                 // cout << "\nExiting..." << thread_id << endl;    // debug
                 global_finished = true;
@@ -129,25 +131,15 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
                 // cout << "| Val: " << nums[curr_index] << endl; // debug
 
                 int64_t number = nums[curr_index];
-                if (cached_results.count(number))               // check cache if `number` was checked primality previously
-                {                                               // Note: checking cache add's to run time, so this is effective when there are many of the same number who are very very large. 
-                    if (cached_results[number] == true)         // `number` is a prime
-                    {
-                        global_result.emplace_back(number);
-                        global_is_number_selected.store(false);
-                    }
-                }
-                // Trivial checks if `number` is a prime or not
-                else if (number < 2)
-                    global_is_number_selected.store(false);
+                if (number < 2)
+                    global_number_selected.store(false);
                 else if (number <= 3) 
                 {
                     global_result.emplace_back(number);
-                    global_is_number_selected.store(false);
+                    global_number_selected.store(false);
                 }
                 else if (number % 2 == 0 || number % 3 == 0)
-                    global_is_number_selected.store(false);
-                // end of trivial checks
+                    global_number_selected.store(false);
                 else
                 {
                     int64_t limit = sqrt(number);
@@ -161,35 +153,31 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
                     // cout << "chunk_size is: " << chunk_size << endl;
                     // cout << "remainder is: " << remainder << endl;
 
-                    // Allocate task values for threads (the range of divisors to check for each thread)
                     int64_t current_index = 0;
-                    // some of the code in the for-loop was from tutorial hints and then altered
                     for (int i = 0; i < global_n_threads; i++)
                     {
-                        int64_t start = 5 + (current_index * 6);        // beginning of the range
-                        int64_t end = start + (chunk_size * 6) - 1;     // end of the range
-
-                        if (i < remainder)  // allocate remainders
+                        int64_t start = 5 + (current_index * 6);
+                        int64_t end = start + (chunk_size * 6) - 1;
+                        if (i < remainder) 
                             end += 6;
-                        if (end > limit)    // cap the end to the `limit`
+                        if (end > limit) 
                             end = limit;
                         
-                        // Set task values for thread `i`
-                        global_tasks[i].curr_num = number;
-                        global_tasks[i].start = start;
-                        global_tasks[i].end = end;
+                        tasks[i].curr_num = number;
+                        tasks[i].start = start;
+                        tasks[i].end = end;
 
                         // debug
-                        // cout << "task["<<i<< "].currN = " << global_tasks[i].curr_num << endl;
-                        // cout << "task["<<i<< "].start = " << global_tasks[i].start << endl;
-                        // cout << "task["<<i<< "].end = " << global_tasks[i].end << endl;
+                        // cout << "task["<<i<< "].currN = " << tasks[i].curr_num << endl;
+                        // cout << "task["<<i<< "].start = " << tasks[i].start << endl;
+                        // cout << "task["<<i<< "].end = " << tasks[i].end << endl;
 
                         current_index += chunk_size + (i < remainder);  // add the `chunk_size`, and 1 if (i < remainder), adds otherwise 0.
                     }
-                    global_is_number_selected.store(true);
+                    global_number_selected.store(true);
                     // cout << "fin allocating to threads" << endl;    // debug
                 }
-                curr_index++;   // check next number in the vector
+                curr_index++;
             }
         }
 
@@ -201,14 +189,15 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
             break;
         
         // parallel task
-        if (global_is_number_selected)
+        if (global_number_selected)
         {
             // debug
             // myMutex.lock();
             // cout << "Thread #" << thread_id << " entering task..." << endl;    
             // myMutex.unlock();
 
-            check_prime_task(global_tasks[thread_id], ref(is_prime));   // each thread will check its task range
+            // check_prime_task(ref(this_task), ref(is_prime));
+            check_prime_task(tasks[thread_id], ref(is_prime));
 
             // wait until all threads are done.
             if (barrier.wait())         // get last thread
@@ -216,15 +205,15 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
                 // cout << "prime check" << endl;  /// debug
                 if (is_prime)
                 {
-                    global_result.emplace_back(global_tasks[thread_id].curr_num);
+                    global_result.emplace_back(tasks[thread_id].curr_num);
                 }
-                cached_results[global_tasks[thread_id].curr_num] = is_prime;
-                global_is_number_selected.store(false);
+                resultMap[tasks[thread_id].curr_num] = is_prime;
+                global_number_selected.store(false);
                 is_prime.store(true);
             }
         }
 
-        // wait for thread who entered above `if` block to finish
+        // // wait for thread who entered above `if` block to finish
         barrier.wait();
     }
 }
@@ -234,14 +223,20 @@ void thread_function(simple_barrier& barrier, int thread_id, const vector<int64_
 //
 // The parameter n_threads indicates how many threads should be created to speed
 // up the computation.
+// -----------------------------------------------------------------------------
+// You will most likely need to re-implement this function entirely.
+// Note that the current implementation ignores n_threads. Your multithreaded
+// implementation must use this parameter.
+// std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
 std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
 {
     // check if `nums` is empty
     if (nums.empty())
         return {};
+    // cout << "Entering!" << endl;    // debug
 
-    // create threads and tasks
-    vector<Task> task_pool(n_threads, {0, 0, 0});    // create `n_thread` instances of global_Tasks with {0, 0, 0} as values in struct 
+    // create threads
+    vector<Task> task_pool(n_threads, {0, 0, 0});    // create `n_thread` instances of Tasks with {0, 0, 0} as values in struct 
     vector<thread> thread_pool;
     unsigned long currentIndex = 0;
 
@@ -252,9 +247,9 @@ std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_thre
     {
         thread_pool.emplace_back(thread(thread_function, ref(barrier), i, ref(nums), ref(currentIndex), ref(is_prime)));
     }
-    // void thread_function(int thread_id, const vector<int64_t>& nums, vector<Task>& global_tasks, Task& this_task, unsigned long& curr_index, atomic<bool>& is_prime)
+    // void thread_function(int thread_id, const vector<int64_t>& nums, vector<Task>& tasks, Task& this_task, unsigned long& curr_index, atomic<bool>& is_prime)
 
-    global_tasks = task_pool;
+    tasks = task_pool;
     global_n_threads = n_threads;
 
     // start up threads
@@ -268,3 +263,9 @@ std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_thre
 
     return global_result;
 }
+
+// expected for `example.txt`: 3 19 3 1033
+
+
+
+

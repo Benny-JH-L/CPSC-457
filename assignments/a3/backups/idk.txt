@@ -1,0 +1,270 @@
+/// ============================================================================
+/// Copyright (C) 2025 Pavol Federl (pfederl@ucalgary.ca)
+/// All Rights Reserved. Do not distribute this file.
+/// ============================================================================
+///
+/// You must modify this file and then submit it for grading to D2L.
+///
+/// You can delete all contents of this file and start from scratch if
+/// you wish, as long as you implement the detect_primes() function as
+/// defined in "detectPrimes.h".
+
+#include "detectPrimes.h"
+#include <cmath>
+#include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+
+#include <unordered_map>
+#include <thread>
+#include <atomic>
+#include <iostream>
+
+using namespace std;
+
+struct Task
+{
+    // int64_t num_to_check = -1;
+    int64_t start = -1;
+    int64_t end = -1;
+    bool checkNum = false;
+};
+
+
+// C++ barrier class (from lecture notes).
+// You do not have to use it in your implementation. If you don't use it, you
+// may delete it.
+class simple_barrier 
+{
+    std::mutex m_;
+    std::condition_variable cv_;
+    volatile int n_remaining_, count_;
+    volatile bool coin_;
+
+  public:
+    simple_barrier(int count = 1)
+    {
+        init(count);
+    }
+    void init(int count)
+    {
+        count_ = count;
+        n_remaining_ = count_;
+        coin_ = false;
+    }
+    bool wait()
+    {
+        if (count_ == 1) { return true; }
+        std::unique_lock<std::mutex> lk(m_);
+        if (n_remaining_ == 1) {
+            coin_ = ! coin_;
+            n_remaining_ = count_;
+            cv_.notify_all();
+            return true;
+        }
+        auto old_coin = coin_;
+        n_remaining_--;
+        cv_.wait(lk, [&]() { return old_coin != coin_; });
+        return false;
+    }
+};
+
+// returns true if n is prime, otherwise returns false
+// -----------------------------------------------------------------------------
+// to get full credit for this assignment, you will need to adjust or even
+// re-write the code in this function to make it multithreaded.
+// static bool is_prime(int64_t n)
+// {
+//     // there are no primes <2
+//     if (n < 2) return false;
+//     // 2 and 3 are primes
+//     if (n <= 3) return true;
+//     // but multiples of 2 and 3 are not
+//     if (n % 2 == 0 or n % 3 == 0) return false;
+//     // try to divide n by every number 5 .. sqrt(n)
+//     int64_t i = 5;
+//     int64_t max = sqrt(n);
+//     while (i <= max) {
+//         if (n % i == 0 or n % (i + 2) == 0) return false;
+//         i += 6;
+//     }
+//     // didn't find any divisors, so n must be a prime
+//     return true;
+// }
+
+unordered_map<int64_t, bool> resultMap; // a cache, remembers previously computed numbers if they were prime.
+atomic<bool> determinedPrimality;
+
+// may need to edit this...
+// bool thread_is_prime(int64_t& n)
+bool thread_is_prime(int64_t n, u_int64_t start, u_int64_t end)
+{    
+    // there are no primes < 2
+    if (n < 2) return false;
+    // 2 and 3 are primes
+    if (n <= 3) return true;
+    // but multiples of 2 and 3 are not
+    if (n % 2 == 0 or n % 3 == 0) return false;
+    // try to divide n by every number 5 .. sqrt(n)
+    // int64_t i = 5;
+    // int64_t max = sqrt(n);
+
+    int64_t i = start;
+    int64_t max = end;
+
+    while (i <= max && !determinedPrimality) 
+    {
+        if (n % i == 0 or n % (i + 2) == 0) 
+        {
+            determinedPrimality = true;
+            return false;
+        }
+        i += 6;
+    }
+    // didn't find any divisors, so n must be a prime
+    determinedPrimality = true;
+    return true;
+}
+
+// use barrier or mutex to add to these data structures
+simple_barrier barrier = simple_barrier();
+mutex myMutex;
+
+vector<int64_t> result;
+
+atomic<bool> finishedAllNums = false;
+atomic<bool> numberChosen = false;
+atomic<u_int64_t> curr_index = 0;
+
+atomic<u_int64_t> counter = 0; // keeps track of the number of threads with divisors allocated to it for the current number
+// atomic<u_int64_t> cumulativeStart = -1; // keeps track of the `start` of the most recent thread
+atomic<u_int64_t> maxI = -1;         // `max` will be set to the sqrt of nums[curr_index]
+atomic<u_int64_t> portionSize = -1; // will section off divisor ranges for threads
+
+// static void thread_function(const vector<int64_t>& nums, int thread_id, Task task) // faster?
+// 4 threads; 0.0009s, 0.0013s, 0.0012s, 0.0015s, 0.0013s
+void thread_function(const vector<int64_t>& nums, int thread_id, Task& task, int n_threads)
+// 4 threads; 0.0016s, 0.0015s, 0.0005s
+{
+    while(true)
+    {
+        // pick one thread with the barrier
+        if (barrier.wait())
+        {
+            // debug
+            myMutex.lock();
+            cout << "Chosen: thread #" << thread_id << endl;    
+            cout << "\tCurr index = " << curr_index;
+            myMutex.unlock();
+
+            if (curr_index >= nums.size())
+            {
+                cout << "\n\tGone through all the numbers, exiting..." << endl;    // debug
+                finishedAllNums = true;
+                break;
+            }
+
+            cout << " | value: " << nums[curr_index] << endl;  // debug
+
+            if (!numberChosen)
+            {
+                // Check if this number was calcualted before hand
+                if (resultMap.count(nums[curr_index]))
+                {
+                    cout << "Cache used for: " << nums[curr_index] << endl;    // debug
+                    result.emplace_back(nums[curr_index]);
+                }
+                else
+                {
+                    maxI = sqrt(nums[curr_index]);
+                    numberChosen = true;
+                    determinedPrimality = false; // reset variable
+                }
+                curr_index++;
+            }
+            // allocate the range of divisors to thread, to check is current number (nums[curr_index]) is prime
+            else
+            {
+                u_int64_t start = 2 + (counter * portionSize);
+                task.end = (counter == n_threads - 1) ? maxI.load() : start + portionSize.load() - 1;
+                task.start = start;
+                task.checkNum = true;
+            }
+        }
+
+        // synchronize again before starting parallel work
+        barrier.wait();
+
+        if (finishedAllNums)
+            break;
+        else if (determinedPrimality)
+            numberChosen = false;
+
+        else if (task.checkNum)
+        {
+            if (thread_is_prime(nums[curr_index], task.start, task.end))  // check is the `num_to_check` prime
+            {
+                // add the prime to `result`
+                myMutex.lock();
+                cout << "Thread #" << thread_id << " found that number " << nums[curr_index] << " IS prime." << endl;    // debug
+                result.emplace_back(nums[curr_index]);
+                resultMap[nums[curr_index]] = true;
+                myMutex.unlock();
+            }
+            // debug
+            else
+            {
+                myMutex.lock();
+                cout << "Thread #" << thread_id << " found that number " << nums[curr_index] << " is NOT prime." << endl;    // debug
+                resultMap[nums[curr_index]] = false;
+                myMutex.unlock();
+            }
+            task.checkNum = false;
+        }
+    }
+}
+
+// This function takes a list of numbers nums[] and returns a subset of them
+// that are primes. Duplicates in input must be duplicated in the output.
+//
+// The parameter n_threads indicates how many threads should be created to speed
+// up the computation.
+// -----------------------------------------------------------------------------
+// You will most likely need to re-implement this function entirely.
+// Note that the current implementation ignores n_threads. Your multithreaded
+// implementation must use this parameter.
+// std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
+std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
+{
+    // check if `nums` is empty
+    if (nums.empty())
+        return {};
+
+    // create threads
+    Task task_pool[n_threads];
+    thread thread_pool[n_threads];
+
+    for (int i = 0; i < n_threads; i++)
+    {
+        task_pool[i] = {};
+        thread_pool[i] = thread(thread_function, nums, i, ref(task_pool[i]), n_threads);
+    }
+
+    // start up threads
+    for (int i = 0; i < n_threads; i++)
+    {
+        if (thread_pool[i].joinable())
+            thread_pool[i].join();
+    }
+
+    cout << "Done!" << endl;    // debug
+
+    return result;
+}
+
+// expected for `example.txt`: 3 19 3 1033
+
+
+
+

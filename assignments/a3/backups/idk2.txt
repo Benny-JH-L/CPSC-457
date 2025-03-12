@@ -1,0 +1,292 @@
+/// ============================================================================
+/// Copyright (C) 2025 Pavol Federl (pfederl@ucalgary.ca)
+/// All Rights Reserved. Do not distribute this file.
+/// ============================================================================
+///
+/// You must modify this file and then submit it for grading to D2L.
+///
+/// You can delete all contents of this file and start from scratch if
+/// you wish, as long as you implement the detect_primes() function as
+/// defined in "detectPrimes.h".
+
+#include "detectPrimes.h"
+#include <cmath>
+#include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+
+#include <unordered_map>
+#include <thread>
+#include <atomic>
+#include <iostream>
+
+using namespace std;
+
+struct Task
+{
+    int64_t start = -1;
+    int64_t end = -1;
+};
+
+
+// C++ barrier class (from lecture notes).
+// You do not have to use it in your implementation. If you don't use it, you
+// may delete it.
+class simple_barrier 
+{
+    std::mutex m_;
+    std::condition_variable cv_;
+    volatile int n_remaining_, count_;
+    volatile bool coin_;
+
+  public:
+    simple_barrier(int count = 1)
+    {
+        init(count);
+    }
+    void init(int count)
+    {
+        count_ = count;
+        n_remaining_ = count_;
+        coin_ = false;
+    }
+    bool wait()
+    {
+        if (count_ == 1) { return true; }
+        std::unique_lock<std::mutex> lk(m_);
+        if (n_remaining_ == 1) {
+            coin_ = ! coin_;
+            n_remaining_ = count_;
+            cv_.notify_all();
+            return true;
+        }
+        auto old_coin = coin_;
+        n_remaining_--;
+        cv_.wait(lk, [&]() { return old_coin != coin_; });
+        return false;
+    }
+};
+
+unordered_map<int64_t, bool> resultMap; // a cache, remembers previously computed numbers if they were prime.
+simple_barrier barrier = simple_barrier();
+mutex myMutex;
+
+vector<Task>* global_task_pool_ptr;
+vector<bool>* global_is_prime_vec_ptr;
+atomic<bool> global_number_selected = false;
+atomic<bool> global_finished = false;
+// atomic<bool> global_is_prime = true;                    // set initially as true
+atomic<bool> global_determined_primality = false;       // flag for all threads (early cancelation)
+
+unsigned long global_curr_index = 0;
+int global_n_threads;
+
+vector<int64_t> global_result;
+
+// static void thread_function(int thread_id, const vector<int64_t>& nums)
+void thread_function(int thread_id, const vector<int64_t>& nums)
+{
+    (*global_is_prime_vec_ptr)[thread_id] = true;
+    while(true)
+    {
+        // pick one thread with the barrier
+        if (barrier.wait())
+        {
+            // debug
+            myMutex.lock();
+            cout << "Chosen: thread #" << thread_id << endl;    
+            cout << "\tCurr index = " << global_curr_index;
+            myMutex.unlock();
+
+            // check if there any more numbers left to check
+            if (global_curr_index >= nums.size())
+            {
+                cout << "\nExiting..." << thread_id << endl;    
+                global_finished = true;
+            }
+            else
+            {
+                cout << "| Val: " << nums[global_curr_index] << endl; // debug
+
+                int64_t currNum = nums[global_curr_index];
+
+                // check the cached results
+                if (resultMap.count(currNum) && resultMap[currNum] == true)   // check if the `currNum` was calculated before
+                {
+                    // global_result.emplace_back(currNum);                                    // `currNum` was calculated before and it is prime.
+                    global_number_selected = false;
+                }
+
+                // check trivial prime cases
+                // there are no primes < 2, and multiples of 2 and 3 are not
+                else if (currNum < 2 || (currNum % 2 == 0 || currNum % 3 == 0))
+                {
+                    resultMap[currNum] = false;
+                    global_number_selected = false;
+                }
+                // 2 and 3 are primes
+                else if (currNum <= 3)
+                {
+                    resultMap[currNum] = true;
+                    global_number_selected = false;
+                }
+                // the `currNum` is not a trivial case, so we will need to compute if it is prime.
+                else
+                {
+                    global_number_selected = true;
+                    // divide up work for threads
+                    int64_t limit = sqrt(currNum);
+                    int64_t num_divisiors = (limit - 5) / 6 + 1;
+                    int64_t size_for_each = num_divisiors / global_n_threads;
+                    int remainder = num_divisiors % global_n_threads;
+
+                    int64_t current_divisor_index = 0;
+                    for (int i = 0; i < global_n_threads; i++)
+                    {
+                        int64_t start = current_divisor_index;
+                        int64_t end = start + size_for_each - 1;
+
+                        if (i < remainder)  // for "remaining numbers not covered", add them to threads evenly 
+                            end++;
+                        
+                        // allocate the `start` and `end` for each task[index].
+                        // Note: thread with id `i` has Task at index `i`, of the Task vector.
+                        Task& task = (*global_task_pool_ptr)[i];
+                        task.start = 5 + start * 6;
+                        task.end = 5 + end * 6;
+
+                        // check if the `end` crosses over the `limit`, sqrt(current number)
+                        if (task.end > limit)
+                            task.end = limit;   // set `end` as the `limit`.
+                        
+                        current_divisor_index = end + 1;
+                    }
+                }
+
+                global_curr_index++;
+            }
+        }
+
+        // synchronize again before starting parallel work
+        barrier.wait();
+
+        // if gone through all the numbers in `nums` then threads can break
+        if (global_finished)
+            break;
+        
+        // parallel task
+        if (global_number_selected)
+        {
+            int64_t i = (*global_task_pool_ptr)[thread_id].start;         // this thread's `starting` value 
+            int64_t this_max = (*global_task_pool_ptr)[thread_id].end;    // this thread's `end` value
+            int64_t curr_num = nums[global_curr_index - 1];               // i need to -1 for index since i incremented it by 1 to check next number in the vector
+
+            // some of this code was given in tutorial and modified
+            while(!global_determined_primality.load() && i <= this_max)
+            {
+                if (curr_num % i == 0 || curr_num % (i + 2) == 0)
+                {
+                    (*global_is_prime_vec_ptr)[thread_id] = false;
+                    global_determined_primality = true;
+                    // myMutex.lock();
+                    // global_determined_primality.store(true);                    // tell the other threads that a solution was found.
+                    // global_is_prime.store(global_is_prime.load() && false);     // update the global variable, this number is not prime
+                    // myMutex.unlock();
+                    break;
+                }
+                i += 6;
+            }
+        }
+
+        // wait until all threads are done.
+        if (barrier.wait())         // get last thread
+        {
+            // if (global_is_prime)    // check if the current number is prime
+            // {
+            //     global_result.emplace_back(nums[global_curr_index]);    // add this number to the result.
+            // }
+            // resultMap[nums[global_curr_index]] = global_is_prime;       // cache this number's result
+
+            // // reset variable values
+            // global_number_selected = false;
+            // global_is_prime = true;
+            // global_determined_primality = false;    // flag for all threads (early cancelation)
+
+            // check results of threads
+            bool is_prime = true;
+            for (auto val : (*global_is_prime_vec_ptr))
+            {
+                if (!val)
+                {
+                    is_prime = false;
+                    break;
+                }
+            }
+
+            if (is_prime)
+            {
+                global_result.emplace_back(nums[global_curr_index]);    // add this number to the result.
+            }
+            resultMap[nums[global_curr_index]] = is_prime;       // cache this number's result
+
+            // reset variable values
+            global_number_selected = false;
+            global_determined_primality = false;    // flag for all threads (early cancelation)
+        }
+
+        // wait for thread who entered above `if` block to finish
+        barrier.wait();
+    }
+}
+
+// This function takes a list of numbers nums[] and returns a subset of them
+// that are primes. Duplicates in input must be duplicated in the output.
+//
+// The parameter n_threads indicates how many threads should be created to speed
+// up the computation.
+// -----------------------------------------------------------------------------
+// You will most likely need to re-implement this function entirely.
+// Note that the current implementation ignores n_threads. Your multithreaded
+// implementation must use this parameter.
+// std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
+std::vector<int64_t> detect_primes(const std::vector<int64_t> & nums, int n_threads)
+{
+    // check if `nums` is empty
+    if (nums.empty())
+        return {};
+
+    // create threads
+    // Task task_pool[n_threads];
+    vector<Task> task_pool(n_threads, {0, 0});    // create `n_thread` instances of Tasks with {0, 0} as values in struct
+    vector<bool> is_prime_vec(n_threads, true);
+    thread thread_pool[n_threads];
+
+    for (int i = 0; i < n_threads; i++)
+    {
+        // task_pool[i] = {};
+        thread_pool[i] = thread(thread_function, i, nums);
+    }
+
+    global_is_prime_vec_ptr = &is_prime_vec;
+    global_task_pool_ptr = &task_pool;
+    global_curr_index = 0;
+    global_n_threads = n_threads;
+
+    // start up threads
+    for (int i = 0; i < n_threads; i++)
+    {
+        if (thread_pool[i].joinable())
+            thread_pool[i].join();
+    }
+
+    cout << "Done!" << endl;    // debug
+
+    return global_result;
+}
+
+// expected for `example.txt`: 3 19 3 1033
+
+
+
+
