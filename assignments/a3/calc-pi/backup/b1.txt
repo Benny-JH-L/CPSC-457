@@ -1,0 +1,118 @@
+// ======================================================================
+// You must modify this file and then submit it for grading to D2L.
+// ======================================================================
+//
+// count_pixels() counts the number of pixels that fall into a circle
+// using the algorithm explained here:
+//
+// https://en.wikipedia.org/wiki/Approximations_of_%CF%80
+//
+// count_pixels() takes 2 paramters:
+//  r         =  the radius of the circle
+//  n_threads =  the number of threads you should create
+//
+// Currently the function ignores the n_threads parameter. Your job is to
+// parallelize the function so that it uses n_threads threads to do
+// the computation.
+
+#include "calcpi.h"
+#include <cstdio>
+#include <iostream>
+#include <vector>
+#include <thread>
+
+using namespace std;
+
+struct Task 
+{
+    double start_x;
+    double end_x;
+    uint64_t partial_count = 0;
+    int radius = 0;
+};
+
+void count_pixels_in_range(Task* task) 
+{
+    int r = task->radius;
+    int r_squared = r * r;
+    uint64_t local_partial_count = 0;
+    for (int x = task->start_x; x < task->end_x; ++x) 
+    {
+        for (int y = -r; y <= r; ++y) 
+        {
+            if (x * x + y * y <= r_squared) 
+            {
+                local_partial_count++;
+            }
+        }
+    }
+    task->partial_count = local_partial_count;
+}
+
+uint64_t count_pixels(int r, int n_threads)
+{
+
+    vector<thread> threads;
+    vector<Task> tasks(n_threads);
+    double total_columns = 2 * r;
+    double columns_per_thread = total_columns / n_threads;
+
+    for (int i = 0; i < n_threads; i++) 
+    {
+        tasks[i].start_x = -r + (i * columns_per_thread);
+        // tasks[i].end_x = (i == n_threads - 1) ? r : tasks[i].start_x + columns_per_thread;
+        tasks[i].end_x = -r + ((i + 1) * columns_per_thread);
+        tasks[i].radius = r;
+        threads.emplace_back(count_pixels_in_range, &tasks[i]);
+    }
+
+    uint64_t count = 0;
+    for (int i = 0; i < n_threads; i++) 
+    {
+        threads[i].join();
+        count += tasks[i].partial_count;
+    }
+
+    // make sure your multithreaded solution returns the same number of
+    // pixels as the single-threaded solution below!!!
+    // double rsq = double(r) * r;
+    // uint64_t count = 0;
+    // for (double x = -r; x <= r; x++) 
+    // {
+    //     printf("\n--x = %f\n", x);
+    //     for (double y = -r; y <= r; y++) 
+    //     {
+    //         if (x * x + y * y <= rsq) 
+    //         {
+    //             count++;
+    //             printf("count = %ld\n", count);
+    //     }
+    //         printf("y = %f\n", y);
+    //     }
+    // }
+
+    cout << "Final count: " << count << endl;
+    return count;
+}
+
+// need to make n threads, then make them count_pixels with evenly distributed radi
+// then, sum up all the partials counts at the end
+ 
+// uint64_t count_pixels(int r, int n_threads)
+// {
+//     // make sure your multithreaded solution returns the same number of
+//     // pixels as the single-threaded solution below!!!
+//     double rsq = double(r) * r;
+//     uint64_t count = 0;
+//     for (double x = -r; x <= r; x++) {
+//         for (double y = -r; y <= r; y++) {
+//             if (x * x + y * y <= rsq) {
+//                 count++;
+//             }
+//         }
+//     }
+//     return count;
+// }
+ this code is a little off...
+ on ./calcpi 100000 24 i get the result: Result = 32946815160 pixels (estimated PI=3.294681516)
+ when it should be Result = 31415925457 pixels (estimated PI=3.1415925457)
