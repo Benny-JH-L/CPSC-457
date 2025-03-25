@@ -1,0 +1,97 @@
+/// =========================================================================
+/// Copyright (C) 2025 Pavol Federl (pfederl@ucalgary.ca)
+/// All Rights Reserved. Do not distribute this file.
+/// =========================================================================
+/// this is the only file you should modify and submit for grading
+
+#include "scheduler.h"
+#include <vector>
+#include <queue>
+
+using namespace std;
+
+// this is the function you should implement
+//
+// simulate_rr() implements a Round-Robin scheduling simulator
+// input:
+//   quantum = time slice
+//   max_seq_len = maximum length of the reported executing sequence
+//   processes[] = list of process with populated IDs, arrivals, and bursts
+// output:
+//   seq[] - will contain the compressed execution sequence
+//         - idle CPU will be denoted by -1
+//         - other entries will be from processes[].id
+//         - sequence will be compressed, i.e. no repeated consecutive numbers
+//         - sequence will be trimmed to contain only first max_seq_len entries
+//   processes[]
+//         - adjust finish_time and start_time for each process
+//         - do not adjust other fields
+//
+void simulate_rr(
+    int64_t quantum, 
+    int64_t max_seq_len,
+    std::vector<Process> & processes,
+    std::vector<int> & seq
+) 
+{
+    seq.clear();
+
+    int64_t current_time = 0;
+    vector<int64_t> vec_remaining_proc_time(processes.size(), 0);    // index == process ID, and it contains the remaining time it has until it finishes
+
+    // Set process burst times
+    for (uint64_t i = 0; i < vec_remaining_proc_time.size(); i++)
+        vec_remaining_proc_time[processes[i].id] = processes[i].burst;  // since processes is sorted by arrival time and ID this should be equivalent: vec_remaining_proc_time[i] = processes[i].burst
+    
+    // ID's are `ints`
+    queue<int&> job_queue;
+    queue<int&> ready_queue;
+
+    // add all the process id's to job queue
+    for (uint64_t i = 0; i < processes.size(); i++)
+        job_queue.push(processes[i].id);
+
+    while (true)
+    {
+        if (ready_queue.empty())
+        {
+            if (job_queue.empty()) break;
+
+            int& proc_ID = job_queue.front();
+            current_time = processes[proc_ID].arrival;
+            processes[proc_ID].start_time = current_time;
+            ready_queue.push(proc_ID);
+        }
+        current_time += quantum;
+        int& proc_id_curr = ready_queue.front();
+        ready_queue.pop();
+        vec_remaining_proc_time[proc_id_curr] -= quantum;
+
+        if (vec_remaining_proc_time[proc_id_curr] < 0)
+        {
+            vec_remaining_proc_time[proc_id_curr] = 0;
+            processes[proc_id_curr].finish_time = current_time;
+        }
+
+        int& proc_id_in_JQ = job_queue.front();
+        if (processes[proc_id_in_JQ].arrival >= current_time)
+        {
+            ready_queue.push(proc_id_in_JQ);
+            processes[proc_id_in_JQ].start_time = current_time;
+            job_queue.pop();
+        }
+
+        if (vec_remaining_proc_time[proc_id_curr] > 0)
+            ready_queue.push(proc_id_curr);
+    }
+
+
+    // replace the wrong implementation below with your own!!!!
+    // seq.clear();
+    // for (auto & p : processes) 
+    // {
+    //     p.finish_time = p.arrival + p.burst;
+    //     p.start_time = p.arrival;
+    //     seq.push_back(p.id);
+    // }
+}
