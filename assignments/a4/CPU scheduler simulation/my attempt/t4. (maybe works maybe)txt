@@ -1,0 +1,209 @@
+/// =========================================================================
+/// Copyright (C) 2025 Pavol Federl (pfederl@ucalgary.ca)
+/// All Rights Reserved. Do not distribute this file.
+/// =========================================================================
+/// this is the only file you should modify and submit for grading
+
+#include "scheduler.h"
+#include <vector>
+#include <queue>
+#include <iostream>
+
+using namespace std;
+
+// this is the function you should implement
+//
+// simulate_rr() implements a Round-Robin scheduling simulator
+// input:
+//   quantum = time slice
+//   max_seq_len = maximum length of the reported executing sequence
+//   processes[] = list of process with populated IDs, arrivals, and bursts
+// output:
+//   seq[] - will contain the compressed execution sequence
+//         - idle CPU will be denoted by -1
+//         - other entries will be from processes[].id
+//         - sequence will be compressed, i.e. no repeated consecutive numbers
+//         - sequence will be trimmed to contain only first max_seq_len entries
+//   processes[]
+//         - adjust finish_time and start_time for each process
+//         - do not adjust other fields
+//
+void simulate_rr(
+    int64_t quantum, 
+    int64_t max_seq_len,
+    std::vector<Process> & processes,
+    std::vector<int> & seq
+) 
+{
+    // for (auto& p : processes)
+    // {
+    //     cout << "proc<"<<p.id<<">\n \tarrival: " << p.arrival << "\n\tburst: " << p.burst << endl; 
+    // }
+    seq.clear();
+
+    int64_t current_time = 0;
+    vector<int64_t> vec_remaining_proc_time(processes.size(), 0);    // index == process ID, and it contains the remaining time it has until it finishes
+
+    // Set process burst times
+    for (uint64_t i = 0; i < vec_remaining_proc_time.size(); i++)
+        // vec_remaining_proc_time[processes[i].id] = processes[i].burst;  // since processes is sorted by arrival time and ID this should be equivalent: vec_remaining_proc_time[i] = processes[i].burst
+        vec_remaining_proc_time[i] = processes[i].burst;
+
+    // ID's are `ints`
+    queue<int> job_queue;
+    queue<int> ready_queue;
+    
+    // add all the process id's to job queue
+    for (uint64_t i = 0; i < processes.size(); i++)
+        job_queue.push(processes[i].id);
+
+    cout << "\ninitial job queue: " << endl;
+    queue<int> copy_q = job_queue;
+    while (!copy_q.empty())
+    {
+        cout << copy_q.front() << ", ";
+        copy_q.pop();
+    }
+    cout << endl;
+
+    vector<int> sequence;
+
+    int count = 0;
+    // while (count < 2)
+    while (true)
+    {
+        cout << "\ncurrent time: " << current_time << endl;
+
+        if (ready_queue.size() == 0)
+        {
+            cout << "ready queue is empty\n";
+    
+            if (job_queue.size() == 0)
+            {
+                cout << "job queue is empty (exiting...)\n";
+                break;
+            }
+
+            // int proc = job_queue.front();
+            // job_queue.pop();
+            // current_time = max(current_time, processes[proc].arrival);
+            // processes[proc].start_time = current_time;
+            // ready_queue.push(proc);
+
+            while (!job_queue.empty())
+            {
+                int proc_jq = job_queue.front();
+                cout << "proc id <"<<proc_jq<<"> arrival: " << processes[proc_jq].arrival << endl;
+                if (processes[proc_jq].arrival <= current_time)
+                {
+                    ready_queue.push(proc_jq);
+                    job_queue.pop();
+                    cout << "added proc id <"<<proc_jq<<"> to RQ\n";
+                }
+                else
+                {
+                    cout << "left RQ adder early\n";
+                    break;  // break early
+                }
+            }
+
+            int id = ready_queue.front();
+            cout << "using id<"<<id<<"> arrival to update curr time (if it is > curr time)\n";
+            cout << "\t arrival: " << processes[id].arrival << endl;
+            current_time = max(current_time, processes[id].arrival);
+            cout << "current time: " << current_time << endl;
+
+            // debugging
+            cout << "\nready queue: " << endl;
+            queue<int> copy_q = ready_queue;
+            while (!copy_q.empty())
+            {
+                cout << copy_q.front() << ", ";
+                copy_q.pop();
+            }
+            cout << endl;
+
+            cout << "\njob queue: " << endl;
+            copy_q = job_queue;
+            while (!copy_q.empty())
+            {
+                cout << copy_q.front() << ", ";
+                copy_q.pop();
+            }
+            cout << endl;
+        }
+
+        // execute front process in ready queue
+        int proc_rq = ready_queue.front();
+        ready_queue.pop();
+
+        if (processes[proc_rq].start_time == -1)
+        {
+            processes[proc_rq].start_time = current_time;
+            cout << "proc id<"<<proc_rq<<"> starting at: " << current_time << endl; // debug
+        }
+        cout << "executing proc id<"<<proc_rq<<"> with rem. time: " << vec_remaining_proc_time[proc_rq] << endl;
+        cout << "curr_time before execution: " << current_time << endl;
+        // int64_t proc_remaining_time = vec_remaining_proc_time[proc_rq];
+        // int64_t execute_time = min(quantum, proc_remaining_time);
+        int64_t execute_time = min(quantum, vec_remaining_proc_time[proc_rq]);
+        current_time += execute_time;
+        vec_remaining_proc_time[proc_rq] -= execute_time;
+        // proc_remaining_time -= execute_time;
+        // vec_remaining_proc_time[proc_rq] = proc_remaining_time;
+
+        cout << "curr_time after execution: " << current_time << endl;
+        
+        if (vec_remaining_proc_time[proc_rq] <= 0)
+        {
+            processes[proc_rq].finish_time = current_time;
+        }
+
+        while (!job_queue.empty())
+        {
+            int proc_jq = job_queue.front();
+            cout << "proc id <"<<proc_jq<<"> arrival: " << processes[proc_jq].arrival << endl;
+            if (processes[proc_jq].arrival <= current_time)
+            {
+                ready_queue.push(proc_jq);
+                job_queue.pop();
+                cout << "added proc id <"<<proc_jq<<"> to RQ\n";
+            }
+            else
+            {
+                cout << "left RQ adder early\n";
+                break;  // break early
+            }
+        }
+
+        if (vec_remaining_proc_time[proc_rq] > 0)
+        {
+            ready_queue.push(proc_rq);
+            cout << "(curr proc) proc id<"<<proc_rq<<"> has rem. time: "<<vec_remaining_proc_time[proc_rq]<<" adding back to RQ\n";
+        }
+
+        cout << "\nready queue: " << endl;
+        queue<int> copy_q = ready_queue;
+        while (!copy_q.empty())
+        {
+            cout << copy_q.front() << ", ";
+            copy_q.pop();
+        }
+        cout << endl;
+
+        cout << "\njob queue: " << endl;
+        copy_q = job_queue;
+        while (!copy_q.empty())
+        {
+            cout << copy_q.front() << ", ";
+            copy_q.pop();
+        }
+        cout << endl;
+
+
+        count++;
+    }
+
+
+
+}
