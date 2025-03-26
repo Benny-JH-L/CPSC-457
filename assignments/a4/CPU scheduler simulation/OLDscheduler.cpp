@@ -4,10 +4,6 @@
 /// =========================================================================
 /// this is the only file you should modify and submit for grading
 
-/*
-CPSC457 Winter 2025 | Assignment 4 | Benny Liang | 30192142
-*/
-
 #include "scheduler.h"
 #include <vector>
 #include <queue>
@@ -79,8 +75,7 @@ void simulate_rr(
     // cout << "\ninitial job queue: " << endl;
     // print_queue(job_queue);
 
-    int64_t num_proc_started = 0;
-
+    vector<int> sequence;   // uncompressed sequence 
     while (true)
     {
         // cout << "\ncurrent time: " << current_time << endl; //debug
@@ -128,8 +123,7 @@ void simulate_rr(
             
             if (current_time < processes[id].arrival)   // was idle
             {
-                if (seq.empty() || (seq.back() != -1) && seq.size() < max_seq_len)
-                    seq.push_back(-1);
+                sequence.emplace_back(-1);
                 // cout << "idling...";    // debug
             }
             // debug
@@ -150,15 +144,11 @@ void simulate_rr(
         // get proccess to execute
         int proc_rq = ready_queue.front();
         ready_queue.pop();
-
-        // push to seq if a new process
-        if (seq.empty() || (seq.back() != proc_rq) && seq.size() < max_seq_len)
-            seq.push_back(proc_rq);
+        sequence.emplace_back(proc_rq);     // add this proc id to sequence
 
         // set the start time of this process if it hasn't been set yet
         if (processes[proc_rq].start_time == -1)
         {
-            num_proc_started++;
             processes[proc_rq].start_time = current_time;
             // cout << "proc id<"<<proc_rq<<"> starting exec. at: " << current_time << endl; // debug
         }
@@ -213,51 +203,28 @@ void simulate_rr(
         // print_queue(ready_queue);
         // cout << "\njob queue: " << endl;
         // print_queue(job_queue);
+    }
 
-        // optimization for large quantum and burst times
-        if (!ready_queue.empty())
+    // debugging
+    // cout << "sequence (uncompresssed):\n[";
+    // for (auto& id : sequence)
+    //     cout << id <<",";
+    // cout << endl;
+
+    // compress the sequence
+    if (max_seq_len > 0 && sequence.size() > 0)
+    {
+        seq.emplace_back(sequence[0]);  // add an initial id
+        for (u_int64_t i = 1; i < sequence.size() && seq.size() < max_seq_len; i++)
         {
-            if (((seq.size() == max_seq_len) || (ready_queue.size() == 1 && seq.size() < max_seq_len)) && num_proc_started >= ready_queue.size())
+            if (sequence[i] != seq.back())  // if the current id != the most recent id of `seq` then add it to `seq`
             {
-                // cout << "entered optimization\n";   // debug
-
-                // find minimum remaining burst
-                int64_t min_remaining_burst = INT64_MAX;    // set to max val intially
-                int64_t rounds = ready_queue.size();
-
-                queue<int> copy_rq = ready_queue;   // copy ready_queue
-                while (!copy_rq.empty())    
-                {
-                    min_remaining_burst = min(vec_remaining_proc_time[copy_rq.front()], min_remaining_burst);
-                    copy_rq.pop();
-                }
-
-                int64_t num_times_quantum_goes_into_min_burst = INT64_MAX;
-                int64_t val = INT64_MAX;
-
-                // calculate maximum iterations for minimum remaining burst
-                if (quantum < min_remaining_burst)
-                    num_times_quantum_goes_into_min_burst = (min_remaining_burst / quantum) - 1;
-
-                // calculate jump to next arrival
-                if (!job_queue.empty())
-                val = (processes[job_queue.front()].arrival - current_time) / (rounds * quantum);
-
-                int64_t n_val = min(num_times_quantum_goes_into_min_burst, val);
-
-                // apply optimization if valid, (ie, `num_times_quantum_goes_into_min_burst` or `val` is not `INT64_MAX`)
-                if (n_val != INT64_MAX)
-                {
-                    current_time += n_val * rounds * quantum;
-
-                    copy_rq = ready_queue;
-                    while (!copy_rq.empty())    
-                    {
-                        vec_remaining_proc_time[copy_rq.front()] -= n_val * quantum;
-                        copy_rq.pop();
-                    }
-                }
+                seq.emplace_back(sequence[i]); 
+                // debug
+                // cout << "(i= "<<i<<")adding to compressed seq: " << sequence[i] << endl;
+                continue;
             }
+            // cout << "(i= "<<i<<")skipped id to add to seq: " << sequence[i] << endl;    // debug
         }
     }
 }
