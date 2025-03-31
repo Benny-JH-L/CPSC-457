@@ -1,0 +1,381 @@
+// -------------------------------------------------------------------------------------
+// this is the only file you need to edit
+// -------------------------------------------------------------------------------------
+//
+// (c) 2025, Pavol Federl, pfederl@ucalgary.ca
+// Do not distribute this file.
+
+#include "fatsim.h"
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <stack>
+#include <set>
+#include <algorithm>
+
+#include <iostream>
+#include <vector>
+#include <stack>
+#include <utility>
+
+using namespace std;
+
+class Num2ID
+{
+private:
+    unordered_map<int, int> map_id;
+    int counter = 0;
+    vector<int> vec_reverse_myset;
+
+public:
+    int get(const int& num)
+    {
+        auto f = map_id.find(num);
+        if (f == map_id.end())
+        {
+            map_id[num] = counter;
+            vec_reverse_myset.emplace_back(num);
+            return counter++;
+        }
+        return f->second;
+    }
+
+    // gets the int associated with the `int i`
+    int reverse_get(const int& i)
+    {
+        return vec_reverse_myset[i];
+    }
+
+    const vector<int>* get_vec_reversed()
+    {
+        return &vec_reverse_myset;
+    }
+};
+
+
+
+// Function to find the longest path from a starting node using iterative DFS
+int findLongestPath(const std::vector<std::vector<int>>& adjacency_list, int start_node) {
+    int n = adjacency_list.size();
+    std::vector<bool> visited(n, false);
+    std::vector<int> longest_path(n, 0); // Stores the longest path from each node
+    
+    // Stack for iterative DFS: (node, exploration_state)
+    // exploration_state: -1 means node is being processed, otherwise it's the index of child being explored
+    std::stack<std::pair<int, int>> dfs_stack;
+    
+    dfs_stack.push({start_node, 0}); // Start with the first child of start_node
+    
+    while (!dfs_stack.empty()) {
+        auto [current, child_idx] = dfs_stack.top();
+        dfs_stack.pop();
+        
+        // Mark as visited when we first encounter the node
+        if (!visited[current]) {
+            visited[current] = true;
+        }
+        
+        // If we have no children or have finished exploring all children
+        if (adjacency_list[current].empty() || child_idx >= adjacency_list[current].size()) {
+            // For leaf nodes, the longest path is 0
+            // For non-leaf nodes, find the maximum path length through its children
+            if (!adjacency_list[current].empty()) {
+                int max_child_path = 0;
+                for (int child : adjacency_list[current]) {
+                    max_child_path = std::max(max_child_path, longest_path[child]);
+                }
+                longest_path[current] = 1 + max_child_path; // Add 1 for the edge to the child
+            }
+            continue;
+        }
+        
+        // Push current node with next child index
+        dfs_stack.push({current, child_idx + 1});
+        
+        // Push the current child with starting index 0
+        int next_node = adjacency_list[current][child_idx];
+        if (!visited[next_node]) {
+            dfs_stack.push({next_node, 0});
+        }
+    }
+    
+    return longest_path[start_node];
+}
+
+
+// struct DFSNode {
+//     int node;
+//     vector<int> path;
+// };
+
+// vector<int> findLongestPath(vector<vector<int>>& adjacency_list, int start_node) {
+//     stack<DFSNode> dfs_stack;
+//     dfs_stack.push({start_node, {start_node}});
+//     vector<int> longest_path;
+    
+//     while (!dfs_stack.empty()) {
+//         DFSNode current = dfs_stack.top();
+//         dfs_stack.pop();
+
+//         if (adjacency_list[current.node].empty()) { // Leaf node
+//             if (current.path.size() > longest_path.size()) {
+//                 longest_path = current.path;
+//             }
+//         }
+
+//         for (int neighbor : adjacency_list[current.node]) {
+//             vector<int> new_path = current.path;
+//             new_path.push_back(neighbor);
+//             dfs_stack.push({neighbor, new_path});
+//         }
+//     }
+    
+//     return longest_path;
+// 
+
+void dfs(int start, const vector<vector<int>>& adjList, vector<int>& results) {
+    int n = adjList.size();
+    vector<int> pred(n, -1), distance(n, 0);
+    vector<bool> visited(n, false);
+    stack<int> s;
+    s.push(start);
+    visited[0] = true;
+
+    // DFS traversal
+    while (!s.empty()) {
+        int current = s.top();
+        s.pop();
+        
+        // Update distance if not visited
+        if (pred[current] != -1) {
+            distance[current] = distance[pred[current]] + 1;
+        }
+        
+        // Traverse neighbors
+        for (int neighbor : adjList[current]) {
+            if (!visited[neighbor]) {
+                pred[neighbor] = current;  // Store predecessor
+                visited[neighbor] = true;
+                s.push(neighbor);
+            }
+        }
+    }
+    
+    for (int i = 0; i < distance.size(); i++)
+    {
+        cout << "distance["<<i<<"] = " << distance[i] << endl;
+    }
+
+
+    // Store the max distance in results
+    results.push_back(*max_element(distance.begin(), distance.end()));
+
+    for (int i = 0; i < results.size(); i++)
+    {
+        cout << "results["<<i<<"] = " << results[i] << endl;
+    }
+}
+
+// reimplement this function
+vector<long> fat_check(const vector<long> & fat)
+{
+    cout << "adj\n";
+    // Generate a reversed graph (adj list representation), where instead of `index i` -> `fat[i]` we do: `fat[i]` -> `index i` 
+    vector<vector<int>> adj_list(fat.size() + 1);
+    Num2ID num2ID;
+    num2ID.get(-1);     // ensure the `id` of node -1 is 0.
+    cout << "adj2\n";
+    
+    // Note: making the graph takes the majority of the time
+    for (u_int32_t i = 0; i < fat.size(); i++)
+    {
+        // cout << "fat["<<i<<"] = " << fat[i] << endl;
+        int id = num2ID.get(fat[i]);
+        int id2 = num2ID.get(i);
+        // cout << "id of node<"<<fat[i]<<"> is: " << id << endl;
+        // cout << "id of index<"<<i<<"> is: " << id2 << endl;
+
+        adj_list[id].emplace_back(id2);
+        // cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] added " << adj_list[id][adj_list.size()-1] << endl;
+    }
+
+    cout << "adj_list size: " << adj_list.size() << endl;
+
+    // debug
+    // for (u_int32_t i = 0; i < adj_list.size(); i++)
+    // {
+    //     cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] = nodes: ";
+    //     for (int& num : adj_list[i])
+    //     {
+    //         cout << num2ID.reverse_get(num) << " ";
+    //     }
+    //     cout << endl;
+
+    //     // prints id's
+    //     // cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] = ids: ";
+    //     // // cout << "adj_list[node<"<<num2ID.reverse_get(i)<<">] = ";
+    //     // for (int& num : adj_list[i])
+    //     // {
+    //     //     cout << num << " ";
+    //     // }
+    //     // cout << endl;
+    // }
+
+
+    cout << "DFS" << endl;  // debug
+
+    // prepare for DFS
+    // Note: adj_list[0] is a vector<int> of node id's where node -1 (id 0) is pointing to
+    int size_adj_list = adj_list.size();
+    int longest_chain_size = -1;
+    vector<int> pred(size_adj_list, -1), distance(size_adj_list, 0);
+    vector<bool> visited(size_adj_list, false);
+    stack<int> s;
+    s.push(0);          // add node -1 to stack
+    visited[0] = true;  // visited node -1
+
+    // perform DFS on the reversed graph
+    while (!s.empty()) 
+    {
+        int current_id = s.top();
+        s.pop();
+        
+        // update distance if not visited
+        if (pred[current_id] != -1) 
+        {
+            distance[current_id] = distance[pred[current_id]] + 1;
+            longest_chain_size = max(longest_chain_size, distance[current_id]);
+        }
+        
+        // traverse neighbors
+        for (int neighbor : adj_list[current_id]) 
+        {
+            if (!visited[neighbor]) 
+            {
+                pred[neighbor] = current_id;  // store predecessor
+                visited[neighbor] = true;
+                s.push(neighbor);
+            }
+        }
+    }
+    cout << "DFS fin" << endl;
+
+    // debug
+    // for (int i = 0; i < distance.size(); i++)
+    // {
+    //     cout << "distance["<<i<<"] = " << distance[i] << endl;
+    // }
+
+    // Store the max distance in results
+    // longest_chain_size = *max_element(distance.begin(), distance.end());
+    // printf("longest chain size: %d\n", longest_chain_size);
+    vector<long> results;
+    // const vector<int>* rever = num2ID.get_vec_reversed();
+    // get starting blocks that will result in the `longest_chain_size`
+    if (longest_chain_size > 0)
+    {
+        for (u_int32_t i = 0; i < distance.size(); i++)   
+        {
+            if (distance[i] == longest_chain_size)
+            {
+                // results.emplace_back((*rever)[i]);
+                results.emplace_back(num2ID.reverse_get(i));
+                // cout << "[result] added node<"<<num2ID.reverse_get(i)<<"> w/ id: " << i <<endl;
+            }
+        }
+    }
+
+
+
+    // results.push_back(*max_element(distance.begin(), distance.end()));
+
+    // debug
+    // for (int i = 0; i < results.size(); i++)
+    // {
+    //     cout << "results["<<i<<"] = " << results[i] << endl;
+    // }
+
+
+    // return { 1, 2, 5000 };
+    return results;
+}
+
+
+// FAILS ON: ./fatsim < tests/fat4.txt
+// #include <vector>
+// #include <queue>
+// #include <algorithm>
+
+// std::vector<long> fat_check(const std::vector<long>& fat) {
+//     long N = fat.size();
+    
+//     // Build reverse adjacency list
+//     std::vector<std::vector<long>> rev_adj(N);
+//     for (long i = 0; i < N; ++i) {
+//         if (fat[i] != -1 && fat[i] < N) {
+//             rev_adj[fat[i]].push_back(i);
+//         }
+//     }
+    
+//     // Find all blocks that are chain endpoints (have value -1)
+//     std::vector<long> endpoints;
+//     for (long i = 0; i < N; ++i) {
+//         if (fat[i] == -1) {
+//             endpoints.push_back(i);
+//         }
+//     }
+    
+//     // BFS from each endpoint to find the longest chains
+//     std::vector<long> distances(N, -1);
+//     long max_distance = 0;
+    
+//     for (long endpoint : endpoints) {
+//         std::queue<long> q;
+//         std::vector<long> current_distances(N, -1);
+        
+//         q.push(endpoint);
+//         current_distances[endpoint] = 1;  // Count the endpoint itself
+        
+//         while (!q.empty()) {
+//             long current = q.front();
+//             q.pop();
+            
+//             for (long prev : rev_adj[current]) {
+//                 if (current_distances[prev] == -1) {  // Not visited yet
+//                     current_distances[prev] = current_distances[current] + 1;
+//                     q.push(prev);
+//                     max_distance = std::max(max_distance, current_distances[prev]);
+//                 }
+//             }
+//         }
+        
+//         // Update global distances with results from this endpoint
+//         for (long i = 0; i < N; ++i) {
+//             if (current_distances[i] > distances[i]) {
+//                 distances[i] = current_distances[i];
+//             }
+//         }
+//     }
+    
+//     // Find all starting blocks with the maximum chain length
+//     std::vector<long> result;
+//     for (long i = 0; i < N; ++i) {
+//         // A starting block should have no incoming edges (not in any other block's next)
+//         bool is_starting_block = true;
+//         for (long j = 0; j < N; ++j) {
+//             if (fat[j] == i) {
+//                 is_starting_block = false;
+//                 break;
+//             }
+//         }
+        
+//         if (is_starting_block && distances[i] == max_distance) {
+//             result.push_back(i);
+//         }
+//     }
+    
+//     // Sort the result in ascending order
+//     std::sort(result.begin(), result.end());
+    
+//     return result;
+// }

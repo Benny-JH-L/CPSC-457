@@ -1,0 +1,164 @@
+// -------------------------------------------------------------------------------------
+// this is the only file you need to edit
+// -------------------------------------------------------------------------------------
+//
+// (c) 2025, Pavol Federl, pfederl@ucalgary.ca
+// Do not distribute this file.
+
+/*
+CPSC457 Winter 2025 | Assignment 5 | Benny Liang | 30192142
+*/
+
+
+#include "fatsim.h"
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <stack>
+#include <algorithm>
+
+using namespace std;
+
+// Class to convert some `num` to an id
+class Num2ID
+{
+private:
+    unordered_map<int64_t, int64_t> map_id;
+    int64_t counter = 0;
+    vector<int64_t> vec_reverse_myset;
+
+public:
+    int64_t get(const int64_t& num)
+    {
+        auto f = map_id.find(num);
+        if (f == map_id.end())
+        {
+            map_id[num] = counter;
+            vec_reverse_myset.emplace_back(num);
+            return counter++;
+        }
+        return f->second;
+    }
+
+    // gets the int associated with the `int i`
+    int64_t reverse_get(const int64_t& i)
+    {
+        return vec_reverse_myset[i];
+    }
+
+    const vector<int64_t>* get_vec_reversed()
+    {
+        return &vec_reverse_myset;
+    }
+};
+
+// reimplement this function
+vector<long> fat_check(const vector<long> & fat)
+{
+    // generate a reversed graph (adj list representation), where instead of `index i` -> `fat[i]` we do: `fat[i]` -> `index i` 
+    vector<vector<long>> adj_list(fat.size() + 1);
+    Num2ID num2ID;
+    num2ID.get(-1);     // ensure the `id` of node -1 is 0.
+    
+    // Note: making the graph takes up the majority of `fat_check()`s runtime
+    for (u_int32_t i = 0; i < fat.size(); i++)
+    {
+        long id = num2ID.get(fat[i]);
+        long id2 = num2ID.get(i);
+        adj_list[id].emplace_back(id2);
+
+        // debug
+        // cout << "fat["<<i<<"] = " << fat[i] << endl;
+        // cout << "id of node<"<<fat[i]<<"> is: " << id << endl;
+        // cout << "id of index<"<<i<<"> is: " << id2 << endl;
+        // cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] added " << adj_list[id][adj_list.size()-1] << endl;
+    }
+
+    // cout << "adj_list size: " << adj_list.size() << endl;   // debug
+
+    // debug
+    // for (u_int32_t i = 0; i < adj_list.size(); i++)
+    // {
+    //     cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] = nodes: ";
+    //     for (int& num : adj_list[i])
+    //     {
+    //         cout << num2ID.reverse_get(num) << " ";
+    //     }
+    //     cout << endl;
+
+    //     // prints id's
+    //     // cout << "adj_list[id<"<<i<<"> or node<"<<num2ID.reverse_get(i)<<">] = ids: ";
+    //     // // cout << "adj_list[node<"<<num2ID.reverse_get(i)<<">] = ";
+    //     // for (int& num : adj_list[i])
+    //     // {
+    //     //     cout << num << " ";
+    //     // }
+    //     // cout << endl;
+    // }
+
+
+    // cout << "DFS start" << endl;  // debug
+
+    // prepare for DFS
+    // Note: adj_list[0] is a vector<int> of node id's where node -1 (id 0) is pointing to
+    long size_adj_list = adj_list.size();
+    long longest_chain_size = -1;
+    vector<long> pred(size_adj_list, -1), distance(size_adj_list, 0);
+    vector<bool> visited(size_adj_list, false);
+    stack<long> s;
+    s.push(0);          // add node -1 to stack
+    visited[0] = true;  // visited node -1
+
+    // perform DFS on the reversed graph
+    while (!s.empty()) 
+    {
+        long current_id = s.top();
+        s.pop();
+        
+        // update distance if not visited
+        if (pred[current_id] != -1) 
+        {
+            distance[current_id] = distance[pred[current_id]] + 1;
+            longest_chain_size = max(longest_chain_size, distance[current_id]);     // update longest chain size
+        }
+        
+        // traverse neighbors
+        for (long neighbor : adj_list[current_id]) 
+        {
+            if (!visited[neighbor]) 
+            {
+                pred[neighbor] = current_id;  // store predecessor
+                visited[neighbor] = true;
+                s.push(neighbor);
+            }
+        }
+    }
+    // cout << "DFS fin" << endl;   // debug
+
+    // debug
+    // for (int i = 0; i < distance.size(); i++)
+    // {
+    //     cout << "distance["<<i<<"] = " << distance[i] << endl;
+    // }
+
+    // find the longest chain size
+    // longest_chain_size = *max_element(distance.begin(), distance.end());
+
+    // printf("longest chain size: %d\n", longest_chain_size);  // debug
+    vector<long> results;
+
+    // get starting blocks that will result in a chain of size `longest_chain_size`
+    if (longest_chain_size > 0)
+    {
+        for (u_int32_t i = 0; i < distance.size(); i++)   
+        {
+            if (distance[i] == longest_chain_size)              // if a node `id` can make a chain of size `longest_chain_size`
+            {
+                results.emplace_back(num2ID.reverse_get(i));    // add the node to return
+                // cout << "[result] added node<"<<num2ID.reverse_get(i)<<"> w/ id: " << i <<endl;
+            }
+        }
+    }
+
+    return results;
+}
