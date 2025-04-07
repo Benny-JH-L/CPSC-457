@@ -1,0 +1,314 @@
+/// -------------------------------------------------------------------------------------
+/// this is the only file you need to edit
+/// -------------------------------------------------------------------------------------
+///
+/// (c) 2025, Pavol Federl, pfederl@ucalgary.ca
+/// Do not distribute this file.
+
+#include "memsim.h"
+#include <cmath>
+#include <iostream>
+#include <cassert>
+
+#include <list>
+#include <set>
+#include <unordered_map>
+#include <vector>
+#include <iterator>
+
+struct Partition
+{
+    int owner; 
+    int64_t size, addr; 
+};
+
+typedef std::list<Partition>::iterator ListPartIter;
+
+using namespace std;
+
+struct part_cmp { 
+    bool operator()(const ListPartIter & c1, const ListPartIter & c2) const {
+        if (c1->size == c2->size)
+            return c1->addr < c2->addr;
+        else
+            return c1->size > c2->size;
+    }
+}; 
+
+class Simulator 
+{
+private:
+    set<ListPartIter, part_cmp> free_parts;
+
+    MemSimResult sim_results;
+    list<Partition> all_partitions;
+    unordered_map<int, vector<ListPartIter>> owned_parts;   // for a owner, associate it with a vector of ListPartIter
+    int64_t page_size;
+
+    int64_t get_num_pages_needed(int size)
+    {
+        if (page_size - size == 0)
+            return 0;
+        return ceil((float)size / page_size);
+    }
+
+    string to_string_iter(ListPartIter p)
+    {
+        string s = "Owner: ";
+        s.append(to_string(p->owner));
+        s.append(" | size: ");
+        s.append(to_string(p->size));
+        s.append(" | adr: ");
+        s.append(to_string(p->addr));
+        return s;
+    }
+
+    string to_string_part(Partition p)
+    {
+        string s = "Owner: ";
+        s.append(to_string(p.owner));
+        s.append(" | size: ");
+        s.append(to_string(p.size));
+        s.append(" | adr: ");
+        s.append(to_string(p.addr));
+        return s;
+    }
+
+    string to_string_vec_iter(vector<ListPartIter> vec)
+    {
+        string s;
+        for (auto& item : vec)
+        {
+            s.append("[");
+            s.append(to_string_part(*item));
+            s.append("], ");
+        }
+        return s;
+    }
+public:
+
+    Simulator(int64_t page_size_1)
+    {
+        sim_results = {0, 0, 0};
+        page_size = page_size_1;
+    }
+
+    void allocate(int owner, int size)
+    {
+        cout << "\n----Alloc | Owner: " << owner << " | size: " << size << endl;
+
+        if (all_partitions.empty())
+        {
+            printf("----No free partitions\n");
+
+            int64_t num_pages_needed = get_num_pages_needed(size);
+            sim_results.n_pages_requested += num_pages_needed;
+            int64_t alloc_size = page_size * num_pages_needed;  // allocation size is a multiple of `page_size`
+            
+            Partition p = {-1, alloc_size, 0};
+            all_partitions.emplace_back(p);
+            free_parts.emplace(prev(all_partitions.end()));
+
+            auto lst_elem = (*free_parts.find(prev(all_partitions.end())));
+            cout << "Added partition | owner:" << lst_elem->owner << " | size: " << lst_elem->size  << " | adr: " << lst_elem->addr<< endl;
+            cout << "\t[empty case] added to all_parts: " << to_string_part(*prev(all_partitions.end())) << endl;
+        }
+
+        bool found_free_partition = false;
+        ListPartIter free_partition_iter;    // will be the largest available
+
+        if (!all_partitions.empty())
+        {
+            free_partition_iter = (*free_parts.begin());
+            
+            cout << "\tFree largeset partition: " << to_string_iter(free_partition_iter) << endl;
+
+            // check is the largest partition suitable
+            if (free_partition_iter->size >= size)
+            {
+                found_free_partition = true;
+                cout << "\tThis partition is LARGE ENOUGH\n";
+            }
+            else 
+                cout << "\tThis partition is NOT large enough\n";
+        }
+
+        if (!found_free_partition)
+        {
+            auto last_block = prev(all_partitions.end());
+            if (last_block->owner == -1)   // if last block in all_paritions is free
+            {
+                /*
+                load pages, create an empty parition where the size of the order is pf page size
+                and merge with the last partition.
+                change the address and size of this parition based on the last partition
+                */
+               if (last_block->size < size)    // need to allocate more memory
+               {
+                    cout << "\tAlloc more mem to last block\n";
+                    int64_t num_pages_needed = get_num_pages_needed(size);
+                    sim_results.n_pages_requested += num_pages_needed;
+                    int64_t alloc_size = page_size * num_pages_needed;  // allocation size is a multiple of `page_size`
+                    last_block->size += alloc_size;                     // update the last block's size
+
+                    cout << "\t\tAdded mem<"<<alloc_size<<"> pages<"<<num_pages_needed<<">| Last block: " << to_string_iter(last_block) << endl;
+               }
+            }
+           else
+           {
+                cout << "\tCreating new mem block\n";
+                /*
+                simply add a new parition by loading from the memory, size is of the order of page size
+                */
+                int64_t num_pages_needed = get_num_pages_needed(size);
+                sim_results.n_pages_requested += num_pages_needed;
+                int64_t alloc_size = page_size * num_pages_needed;  // allocation size is a multiple of `page_size`
+                int64_t addr = last_block->size + last_block->addr;
+
+                // Create free partition
+                Partition p = {-1, alloc_size, addr};
+                all_partitions.emplace_back(p);
+                free_parts.emplace(prev(all_partitions.end()));
+                cout << "\t\tAdded mem<"<<alloc_size<<"> pages<"<<num_pages_needed<<">| Last block: " << to_string_iter(last_block) << endl;
+           }
+           // required partition will now be the last partition of all_partitions
+           // push this partition to the tree.
+           free_partition_iter = (*free_parts.begin());
+        }
+
+        free_partition_iter = (*free_parts.begin());
+        Partition new_part = {owner, size, free_partition_iter->addr};
+
+        // update block at `free_partition_iter`
+        free_partition_iter->size -= size;
+        free_partition_iter->addr = new_part.size + new_part.addr;
+
+        // insert new partion before node (free partition) before `free_partition_iter`
+        all_partitions.insert(free_partition_iter, new_part);
+        auto new_partition_iter = prev(free_partition_iter);
+        cout << "\t[end] added to all_parts (new partition): " << to_string_part(*new_partition_iter) << endl;
+
+        // Associate the required largest free partition that you have enither created or found with the tag: 
+        owned_parts[owner].push_back(new_partition_iter);
+
+        // if this empty partition is fully used up, remove it from `all_partitions` and `free_parts`
+        if (free_partition_iter->size == 0)
+        {
+            cout << "\tPartition used is now 0... removing from `all_partitions` and `free_parts`" << endl;
+            all_partitions.erase(free_partition_iter);
+            free_parts.erase(free_parts.begin());
+            cout << "\t`free_parts` new free largest partition: " << to_string_iter(*free_parts.begin()) << endl;
+        }
+    }
+
+    void deallocate(int owner)
+    {
+        cout << "----Deloc | owner"<<owner<<"\n";
+        vector<ListPartIter> owner_partitions = owned_parts[abs(owner)];
+        ListPartIter current;
+
+        for (u_int64_t i = 0; i < owner_partitions.size(); i++)
+        {
+            current = owner_partitions[i];
+            current->owner = -1;
+
+            // check left merge if left of `owner` is -1 (ie an empty block/partition)
+            if (current != all_partitions.begin() && prev(current)->owner == -1)
+            {
+                cout << "\tLeft merge\n";
+                auto left_block_iter = prev(current);
+
+                // update `current` block's partition values
+                current->addr = left_block_iter->addr;
+                current->size += left_block_iter->size;
+
+                all_partitions.erase(left_block_iter);  // remove the partition
+                free_parts.erase(left_block_iter);      // remove the partition
+            }
+
+            // check right merge if right of `owner` is -1 (ie an empty block/partition)
+            if (current != prev(all_partitions.end()) && next(current)->owner == -1)
+            {
+                cout << "\tRight merge\n";
+                auto right_block_iter = next(current);
+
+                // update `current` block's partition values
+                current->size += right_block_iter->size;
+
+                all_partitions.erase(right_block_iter);     // remove the partition
+                free_parts.erase(right_block_iter);         // remove the partition
+            }
+
+            // insert the free'd block/partition (`current`) to the `free_parts`
+            free_parts.emplace(current);
+        }
+
+        // remove all the partition iterators associated with this `owner`
+        owned_parts[abs(owner)].clear();
+    }
+
+    MemSimResult getStats()
+    {
+        return sim_results;
+    }
+    void check_consistency()
+    {
+        // mem_sim() calls this after every request. I suggest you put some
+        // checks here to make sure all your data structures are consistent with
+        // each other (especially when implementing the balance binary tree
+        // optimization).  Check the assignment PDF for suggestions.
+        //
+        // The consistency checks will likely slow down your code quite a bit.
+        // Before you submit your code for grading, comment out the line where
+        // you call this function, or put a "return" statement at the very
+        // beginning of the function.
+
+        cout << "\n----Check_consistency:\n";
+
+        cout << "all_parts (all partitions):\n";
+        for (auto& p : all_partitions)
+        {
+            cout << "owner: " << p.owner << " | size: " << p.size  << " | adr: " << p.addr<< endl;
+        }
+
+        cout << "\nFree_parts (Free partitions): \n";
+        for (const auto& it : free_parts) 
+        {
+            cout << "Owner: " << it->owner 
+                 << ", Size: " << it->size 
+                 << ", Addr: " << it->addr << endl;
+        }
+
+        cout << "\nOwned paritions: \n";
+        for (const auto& it : owned_parts)
+        {
+            auto& [owner_id, vec] = it;
+            cout << "\towner["<<owner_id<<"] has paritions: " << to_string_vec_iter(vec) << endl;
+        }
+
+        cout << endl;
+    }
+};
+
+// re-implement the following function
+// ===================================
+// parameters:
+//    page_size: integer in range [1..1,000,000]
+//    requests: array of requests
+// returns:
+//    statistics collected during the simulation
+MemSimResult mem_sim(int64_t page_size, const std::vector<Request> & requests)
+{
+    // if you decide to use the simulator class above, you probably do not need
+    // to modify the code below at all
+    Simulator sim(page_size);
+    for (const auto & req : requests) {
+        if (req.owner < 0) {
+            sim.deallocate(-req.owner);
+        } else {
+            sim.allocate(req.owner, req.size);
+        }
+        sim.check_consistency();
+    }
+    return sim.getStats();
+}
