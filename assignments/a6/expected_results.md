@@ -135,3 +135,41 @@ largest free partition size:    20
 largest free partition address: 100
 elapsed time:                   0.000s
 ```
+
+./memsim 7 < my4.txt
+pages requested:                216042
+largest free partition size:    13140
+largest free partition address: 889548
+elapsed time:                   0.001s
+```
+
+./memsim 901 < my4.txt
+pages requested:                1679
+largest free partition size:    13140
+largest free partition address: 889548
+elapsed time:                   0.000s
+```
+
+./memsim 1 < my4.txt
+pages requested:                1512290
+largest free partition size:    13140
+largest free partition address: 889548
+elapsed time:                   0.000s
+```
+
+./memsim 57 < my5.txt
+pages requested:                45694
+largest free partition size:    31604
+largest free partition address: 2463090
+elapsed time:                   0.163s
+```
+
+./memsim 5700 < my5.txt
+pages requested:                466
+largest free partition size:    33494
+largest free partition address: 630018
+elapsed time:                   0.162s
+```
+
+
+

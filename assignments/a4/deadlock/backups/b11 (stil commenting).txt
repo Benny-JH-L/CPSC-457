@@ -232,6 +232,10 @@ public:
             }
 
         }
+
+        // maybe instead of putting the removed nodes into a vec i could count (int, copy graph size) how many nodes are left,
+        // so, if copy graph size > 0 and (stack os is empty) -> cycles
+
         // cycle detected case
         if (vec_removed_nodes.size() != copy_in_counts.size()){
             for (size_t i = 0; i < copy_in_counts.size(); i++){
